@@ -376,7 +376,10 @@ export async function resolveMedia(params: {
     kind:
       nativeKind !== "sticker" && saved.contentType?.startsWith("audio/")
         ? "audio"
-        : nativeKind === "document" && saved.contentType?.startsWith("image/")
+        : nativeKind === "document" &&
+            saved.contentType?.startsWith("image/") &&
+            // SVG is not a native image for models; keep it a file attachment.
+            saved.contentType !== "image/svg+xml"
           ? "image"
           : nativeKind,
     fileUniqueId: metadata.fileRef.file_unique_id,
