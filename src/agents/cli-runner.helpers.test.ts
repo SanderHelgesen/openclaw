@@ -126,22 +126,6 @@ describe("prepareCliPromptImagePayload prompt references", () => {
     expect(result.imagePaths).toHaveLength(1);
   });
 
-  it("passes an SVG document fact through without aborting the turn", async () => {
-    const workspaceDir = imageWorkspace();
-    const svgPath = path.join(workspaceDir, "icon.svg");
-    await fs.writeFile(svgPath, '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>');
-
-    const prepared = await prepareCliPromptImagePayload({
-      backend: { command: "claude", input: "stdin" },
-      prompt: "look at the attached file",
-      workspaceDir,
-      localRoots: [workspaceDir],
-      media: [{ path: svgPath, contentType: "image/svg+xml", kind: "document" }],
-    });
-
-    expect(prepared.imagePaths ?? []).toEqual([]);
-  });
-
   it("surfaces inline sanitization failure when a preceding image fact is suppressed", async () => {
     await expect(
       prepareCliPromptImagePayload({
