@@ -129,10 +129,11 @@ describe("Telegram preview, presentation, and progress delivery through HTTP", (
     const timeline: string[] = [];
     http.respondToCall = (call) => {
       if (call.method !== "sendChatAction") {
+        const id = call.fields.message_id;
         const replyTo = (call.fields.reply_parameters as { message_id?: number } | undefined)
           ?.message_id;
         timeline.push(
-          `${call.method} id=${String(call.fields.message_id ?? "new")} reply=${String(replyTo ?? "none")}`,
+          `${call.method} id=${id === undefined ? "new" : Number(id)} reply=${replyTo ?? "none"}`,
         );
       }
       return undefined;
