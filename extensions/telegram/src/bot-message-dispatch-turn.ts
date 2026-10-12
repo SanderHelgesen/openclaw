@@ -175,6 +175,12 @@ export async function runTelegramDispatchTurn(turn: Turn) {
               : undefined,
             suppressTyping: isRoomEvent,
             onObservedReplyDelivery: async () => {
+              if (turn.lastAnswerPartialText && !turn.answerLane.finalized) {
+                // Streamed answer text belongs to the final reply that follows, which
+                // finishes it in place. Turn cleanup still retires it if none follows.
+                turn.deliveryState.markDelivered();
+                return;
+              }
               turn.previewLifecycle.beginFinalDelivery();
               await turn.draftEventQueue;
               turn.deliveryState.markDelivered();

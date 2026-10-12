@@ -103,6 +103,88 @@ describe("Telegram preview, presentation, and progress delivery through HTTP", (
     expect([...visibleMessages]).toEqual([[1, finalText]]);
   });
 
+  it("finishes the streamed answer in place after a mid-turn message tool send", async () => {
+    const context = http.createContext();
+    const chat = { id: -1001, type: "supergroup", title: "Forum", is_forum: true } as const;
+    const sessionKey = "agent:default:telegram:group:-1001:topic:15";
+    Object.assign(context, {
+      chatId: -1001,
+      isGroup: true,
+      isForum: true,
+      replyThreadId: 15,
+      threadSpec: { scope: "forum", id: 15 },
+    });
+    context.msg = { ...context.msg, chat, message_thread_id: 15, is_topic_message: true };
+    context.route.sessionKey = sessionKey;
+    Object.assign(context.ctxPayload, {
+      SessionKey: sessionKey,
+      ChatType: "group",
+      From: "telegram:-1001:topic:15",
+      To: "telegram:-1001:topic:15",
+    });
+    const update = "Image swapped. Checking mobile and desktop now.";
+    const preview = "Swapped and published on the [v2 page";
+    const finalText =
+      "Swapped and published on the [v2 page](https://example.com/v2), checked on mobile and PC.";
+    const timeline: string[] = [];
+    http.respondToCall = (call) => {
+      if (call.method !== "sendChatAction") {
+        const replyTo = (call.fields.reply_parameters as { message_id?: number } | undefined)
+          ?.message_id;
+        timeline.push(
+          `${call.method} id=${String(call.fields.message_id ?? "new")} reply=${String(replyTo ?? "none")}`,
+        );
+      }
+      return undefined;
+    };
+    await dispatchProgressTurn(
+      async (options) => {
+        // The message tool posts its update through its own send path.
+        await http.bot.api.sendMessage(-1001, update, { message_thread_id: 15 });
+        await options?.onPartialReply?.({ text: preview });
+        await waitForBotApiCall(
+          (call) => call.method === "sendRichMessage" && call.fields.reply_parameters !== undefined,
+        );
+        // The runner reports that message-tool delivery before the final answer.
+        await options?.onObservedReplyDelivery?.();
+      },
+      {
+        mode: "partial",
+        toolProgress: false,
+        context,
+        replyToMode: "first",
+        finalReply: { text: finalText },
+        cfg: { messages: { groupChat: { visibleReplies: "automatic" } } },
+        telegramCfg: { richMessages: true },
+      },
+    );
+    // The fixture settles detached deletes past the 4 s minimum dwell.
+    expect(timeline).toEqual([
+      "sendMessage id=new reply=none",
+      `sendRichMessage id=new reply=${context.msg.message_id}`,
+      "editMessageText id=2 reply=none",
+    ]);
+    expect([...visibleMessages.keys()]).toEqual([1, 2]);
+    expect(visibleMessages.get(2)).toContain("checked on mobile and PC.");
+  });
+
+  it("retires the streamed preview when only the message tool delivers the answer", async () => {
+    const context = http.createContext();
+    const answer = "Published on the v2 page, checked on mobile and desktop.";
+    await dispatchProgressTurn(
+      async (options) => {
+        await http.bot.api.sendMessage(context.chatId, answer);
+        await options?.onPartialReply?.({ text: answer });
+        await waitForBotApiCall(
+          (call) => call.method === "sendMessage" && call.fields.reply_parameters !== undefined,
+        );
+        await options?.onObservedReplyDelivery?.();
+      },
+      { mode: "partial", toolProgress: false, context, replyToMode: "first", finalReply: [] },
+    );
+    expect([...visibleMessages]).toEqual([[1, answer]]);
+  });
+
   it("delivers hooked progress before final with message_sending in progress mode", async () => {
     const mode = "progress";
     const registry = createEmptyPluginRegistry();
