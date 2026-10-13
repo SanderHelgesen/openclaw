@@ -68,6 +68,8 @@ export async function runTelegramDispatchTurn(turn: Turn) {
   const endDeliveryCorrelation = beginDeliveryCorrelation();
   const queueDraftProgress = (task: () => Promise<void>) =>
     enqueueDraftEvent(turn, task).then(() => false);
+  // Message-tool sends share one single-use reply target per turn (replyToMode first/batched).
+  const hasRepliedRef = { value: false };
 
   try {
     const { onModelSelected, ...replyPipeline } = (
@@ -160,6 +162,7 @@ export async function runTelegramDispatchTurn(turn: Turn) {
               : {}),
             groupThreadReplyFormatter: formatTelegramGroupThreadReply,
             skillFilter: context.skillFilter,
+            hasRepliedRef,
             disableBlockStreaming: turn.disableBlockStreaming,
             preserveProgressCallbackStartOrder: true,
             abortSignal: turn.turnAdoptionLifecycle?.abortSignal,

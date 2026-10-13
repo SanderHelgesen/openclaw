@@ -25,6 +25,7 @@ import { recordOutboundMessageForPromptContext } from "./outbound-message-contex
 import { reactMessageTelegram } from "./send.js";
 import { resolveTelegramTestUpload } from "./send.telegram-http.test-support.js";
 import { wasSentByBot } from "./sent-message-cache.js";
+import { buildTelegramThreadingToolContext } from "./threading-tool-context.js";
 
 describe("Telegram quote selection and accepted reply targets through HTTP", () => {
   const http = createTelegramDispatchHttpFixture();
@@ -155,6 +156,54 @@ describe("Telegram quote selection and accepted reply targets through HTTP", () 
     expect(sends[1]?.fields).not.toHaveProperty("reply_to_message_id");
     expect([...visibleMessages.values()]).toEqual(["A".repeat(80), "B".repeat(40)]);
   });
+
+  it.each(["first", "batched", "all", "off"] as const)(
+    "gives message-tool sends one fresh reply ref per turn in %s mode",
+    async (replyToMode) => {
+      const turns: Array<{
+        ref?: { value: boolean };
+        startValue?: boolean;
+        runRef?: { value: boolean };
+        toolRef?: { value: boolean };
+      }> = [];
+      for (const text of ["First turn.", "Second turn."]) {
+        const context = createContext();
+        await dispatchProgressTurn(
+          async (options, channelOptions) => {
+            const ref = channelOptions?.hasRepliedRef;
+            const toolContext = buildTelegramThreadingToolContext({
+              context: {
+                To: "telegram:123",
+                CurrentMessageId: context.msg.message_id,
+                ReplyToMode: replyToMode,
+              },
+              hasRepliedRef: options?.hasRepliedRef,
+            });
+            turns.push({
+              ref,
+              startValue: ref?.value,
+              runRef: options?.hasRepliedRef,
+              toolRef: toolContext.hasRepliedRef,
+            });
+            // A message-tool reply (implicit or explicit replyTo) consumes the turn's target.
+            if (ref) {
+              ref.value = true;
+            }
+          },
+          { mode: "off", toolProgress: false, context, replyToMode, finalReply: { text } },
+        );
+      }
+      expect(turns).toHaveLength(2);
+      for (const turn of turns) {
+        expect(turn.ref).toBeDefined();
+        expect(turn.startValue).toBe(false);
+        // The agent run hands the same ref to the message tool's threading context.
+        expect(turn.runRef).toBe(turn.ref);
+        expect(turn.toolRef).toBe(turn.ref);
+      }
+      expect(turns[1]!.ref).not.toBe(turns[0]!.ref);
+    },
+  );
 
   it("finalizes a current-message quote in place after quote rejection", async () => {
     const intro =
