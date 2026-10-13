@@ -487,13 +487,12 @@ export async function deliverFinalAnswerText(
   const isFollowUp = turn.previewLifecycle.finalDelivered;
   let result: LaneDeliveryResult;
   if (!isFollowUp && turn.streamMode === "progress") {
-    const afterAcceptedDraft = turn.answerLane.stream?.hasConsumedReplyTarget() === true;
     // Freeze writes, but keep the only visible progress until replacement is accepted.
+    // The card is retired after the final is accepted, so it never keeps the reply target.
     await turn.answerLane.stream?.discard().catch((error: unknown) => {
       logVerbose(`telegram progress discard failed: ${formatErrorMessage(error)}`);
     });
     const deliveryResult = await sendPayload(turn, applyTextToPayload(finalPayload, finalText), {
-      afterAcceptedDraft,
       durable: true,
       promptContextSequence,
       onPlatformSendDispatch,

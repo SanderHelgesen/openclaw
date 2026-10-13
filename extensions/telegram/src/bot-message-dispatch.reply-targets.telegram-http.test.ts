@@ -156,6 +156,41 @@ describe("Telegram quote selection and accepted reply targets through HTTP", () 
     expect([...visibleMessages.values()]).toEqual(["A".repeat(80), "B".repeat(40)]);
   });
 
+  it.each(["first", "batched"] as const)(
+    "replies the progress-mode final to the inbound message in %s mode",
+    async (replyToMode) => {
+      const context = createContext();
+      const inboundId = context.msg.message_id;
+      await dispatchProgressTurn(
+        async (options) => {
+          await emitToolStart(options, { name: "exec", phase: "start", toolCallId: "card" });
+          await waitForBotApiCall(
+            (call) => call.method === "sendMessage" && String(call.fields.text).includes("Exec"),
+          );
+        },
+        {
+          mode: "progress",
+          toolProgress: true,
+          context,
+          replyToMode,
+          finalReply: { text: "The final answer.", replyToId: String(inboundId) },
+        },
+      );
+      const sends = acceptedCalls.filter((call) => call.method === "sendMessage");
+      expect(sends).toHaveLength(2);
+      expect(sends[0]?.fields.reply_parameters).toMatchObject({ message_id: inboundId });
+      // The temporary card must not keep the single reply slot from the final.
+      expect(sends[1]?.fields).toMatchObject({ text: "The final answer." });
+      expect(sends[1]?.fields.reply_parameters).toMatchObject({ message_id: inboundId });
+      // The card is retired only after the final is accepted: one visible reply remains.
+      const retiredAt = acceptedCalls.findIndex(
+        (call) => call.method === "deleteMessage" && Number(call.fields.message_id) === 1,
+      );
+      expect(retiredAt).toBeGreaterThan(acceptedCalls.indexOf(sends[1]!));
+      expect([...visibleMessages.values()]).toEqual(["The final answer."]);
+    },
+  );
+
   it("finalizes a current-message quote in place after quote rejection", async () => {
     const intro =
       "The complete explanation retains the original delivery context and all literal examples.";
